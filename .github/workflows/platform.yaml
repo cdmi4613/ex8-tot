@@ -1,3 +1,112 @@
+name: "Platform Setup Pipeline"
+
+on:
+  workflow_run:
+    workflows:
+      - "Terraform Infra Pipeline"
+    types:
+      - completed
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  platform:
+    name: "Setup EKS Platform"
+
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Setup eksctl
+        run: |
+          curl --silent --location \
+            "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_Linux_amd64.tar.gz" \
+            | tar xz -C /tmp
+
+          sudo mv /tmp/eksctl /usr/local/bin/eksctl
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ secrets.AWS_REGION }} \
+            --name std01-ex8-cluster
+
+      - name: Configure EKS OIDC
+        run: |
+          eksctl utils associate-iam-oidc-provider \
+            --region ${{ secrets.AWS_REGION }} \
+            --cluster std01-ex8-cluster \
+            --approve
+
+      - name: Create ALB Controller IAM Policy
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          POLICY_ARN="arn:aws:iam::$ACCOUNT_ID:policy/std01-ex8-AWSLoadBalancerControllerIAMPolicy"
+
+          if ! aws iam get-policy \
+            --policy-arn "$POLICY_ARN" >/dev/null 2>&1; then
+
+            curl -O https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.14.1/docs/install/iam_policy.json
+
+            aws iam create-policy \
+              --policy-name std01-ex8-AWSLoadBalancerControllerIAMPolicy \
+              --policy-document file://iam_policy.json
+          fi
+
+      - name: Create ALB Controller ServiceAccount
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+          eksctl create iamserviceaccount \
+            --cluster std01-ex8-cluster \
+            --namespace kube-system \
+            --name aws-load-balancer-controller \
+            --attach-policy-arn arn:aws:iam::$ACCOUNT_ID:policy/std01-ex8-AWSLoadBalancerControllerIAMPolicy \
+            --approve \
+            --region ${{ secrets.AWS_REGION }} \
+            --override-existing-serviceaccounts
+
+      - name: Install AWS Load Balancer Controller
+        run: |
+          helm repo add eks https://aws.github.io/eks-charts
+          helm repo update
+
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=std01-ex8-vpc" \
+            --query "Vpcs[0].VpcId" \
+            --output text)
+
+          helm upgrade --install aws-load-balancer-controller \
+            eks/aws-load-balancer-controller \
+            -n kube-system \
+            --set clusterName=std01-ex8-cluster \
+            --set serviceAccount.create=false \
+            --set serviceAccount.name=aws-load-balancer-controller \
+            --set region=${{ secrets.AWS_REGION }} \
+            --set vpcId=$VPC_ID
+
       - name: Install ArgoCD
         run: |
           kubectl create namespace argocd \
@@ -9,3 +118,13 @@
             --force-conflicts \
             -n argocd \
             -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+      - name: Wait for ArgoCD
+        run: |
+          kubectl rollout status deployment/argocd-server \
+            -n argocd \
+            --timeout=300s
+
+      - name: Apply ArgoCD Application
+        run: |
+          kubectl apply -f k8s/argocd-application.yaml
