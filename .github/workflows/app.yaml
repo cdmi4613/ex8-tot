@@ -1,0 +1,91 @@
+name: "Application CI/CD Pipeline"
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/**"
+      - ".github/workflows/app.yaml"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-push:
+    name: "Docker Build & ECR Push"
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. GitHub Repository 코드 가져오기
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. AWS 인증
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # 3. AWS 계정 ID 확인
+      - name: Get AWS Account ID
+        id: aws-account
+        run: |
+          echo "account_id=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_OUTPUT
+
+      # 4. ECR 로그인
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 5. Frontend Docker Build & Push
+      - name: Build and Push Frontend
+        run: |
+          docker build \
+            -t std01-ex8-frontend:${{ github.sha }} \
+            ./app/company/frontend
+
+          docker tag \
+            std01-ex8-frontend:${{ github.sha }} \
+            ${{ steps.aws-account.outputs.account_id }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/std01-ex8-frontend:${{ github.sha }}
+
+          docker push \
+            ${{ steps.aws-account.outputs.account_id }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/std01-ex8-frontend:${{ github.sha }}
+
+      # 6. Backend Docker Build & Push
+      - name: Build and Push Backend
+        run: |
+          docker build \
+            -t std01-ex8-backend:${{ github.sha }} \
+            ./app/company/backend
+
+          docker tag \
+            std01-ex8-backend:${{ github.sha }} \
+            ${{ steps.aws-account.outputs.account_id }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/std01-ex8-backend:${{ github.sha }}
+
+          docker push \
+            ${{ steps.aws-account.outputs.account_id }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/std01-ex8-backend:${{ github.sha }}
+
+      # 7. Kubernetes Manifest 이미지 태그 변경
+      - name: Update Kubernetes Images
+        run: |
+          sed -i \
+            "s|image: .*std01-ex8-frontend:.*|image: ${{ steps.aws-account.outputs.account_id }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/std01-ex8-frontend:${{ github.sha }}|" \
+            k8s/frontend-deployment.yaml
+
+          sed -i \
+            "s|image: .*std01-ex8-backend:.*|image: ${{ steps.aws-account.outputs.account_id }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/std01-ex8-backend:${{ github.sha }}|" \
+            k8s/backend-deployment.yaml
+
+      # 8. 변경된 Kubernetes Manifest를 GitHub에 반영
+      - name: Commit Kubernetes Image Update
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git add k8s/frontend-deployment.yaml
+          git add k8s/backend-deployment.yaml
+
+          git commit -m "update application images ${{ github.sha }}" || exit 0
+          git push
