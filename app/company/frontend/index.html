@@ -3,14 +3,128 @@
 
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Company Frontend</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f7fb;
+            color: #1f2937;
+        }
+
+        header {
+            background: #111827;
+            color: white;
+            padding: 20px 40px;
+        }
+
+        header h1 {
+            font-size: 24px;
+        }
+
+        .container {
+            min-height: calc(100vh - 70px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+        }
+
+        .card {
+            width: 100%;
+            max-width: 700px;
+            background: white;
+            padding: 50px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+            text-align: center;
+        }
+
+        .badge {
+            display: inline-block;
+            background: #e0f2fe;
+            color: #0369a1;
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+
+        h2 {
+            font-size: 36px;
+            margin-bottom: 15px;
+        }
+
+        p {
+            color: #6b7280;
+            line-height: 1.7;
+            margin-bottom: 30px;
+        }
+
+        .button {
+            display: inline-block;
+            text-decoration: none;
+            background: #2563eb;
+            color: white;
+            padding: 14px 24px;
+            border-radius: 10px;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+
+        .button:hover {
+            background: #1d4ed8;
+            transform: translateY(-2px);
+        }
+
+        .info {
+            margin-top: 35px;
+            padding-top: 25px;
+            border-top: 1px solid #e5e7eb;
+            font-size: 14px;
+            color: #9ca3af;
+        }
+    </style>
 </head>
 
 <body>
-    <h1>Company Frontend</h1>
-    <p>Nginx Frontend 정상 동작</p>
 
-    <a href="/api/company">Company Backend 보기</a>
+    <header>
+        <h1>Megazone Bootcamp</h1>
+    </header>
+
+    <div class="container">
+        <div class="card">
+
+            <div class="badge">
+                Nginx Frontend
+            </div>
+
+            <h2>Company Service</h2>
+
+            <p>
+                AWS EKS 환경에서 실행 중인 Frontend 서비스입니다.<br>
+                현재 화면은 Nginx 컨테이너에서 제공되고 있습니다.
+            </p>
+
+            <a class="button" href="/api/company">
+                Backend 페이지 확인
+            </a>
+
+            <div class="info">
+                Frontend → Nginx → Kubernetes → AWS EKS
+            </div>
+
+        </div>
+    </div>
+
 </body>
 
 </html>
